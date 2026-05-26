@@ -1,0 +1,31 @@
+Build a standalone, production-grade Deriv Market Analysis Scanner application using React 18, Vite, Tailwind CSS, and a FastAPI Python backend proxy. 
+
+CRITICAL INSTRUCTIONS:
+- This is a PURE analytics and entry-point scanning tool. There are NO personal user accounts, NO login portals, NO API tokens, and NO virtual options.
+- The tool must connect directly to the public live Deriv streaming API using the application ID loop (wss://ws.derivws.com/websockets/v3?app_id=1089) via the backend proxy to fetch continuous, real-time tick streams.
+- Focus exclusively on two trade formats: EVEN/ODD and MATCHES/DIFFERS.
+
+1. FULL MULTI-INDEX BACKGROUND STREAMER (main.py & Global State)
+- Implement the FastAPI WebSocket proxy layer to seamlessly pass public Deriv tick streams to the frontend without data dropouts or cross-origin blockages.
+- Maintain a concurrent live monitoring matrix for all 19 volatile index assets: R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V, BOOM300N, BOOM500, BOOM1000, CRASH300N, CRASH500, CRASH1000, stpRNG, RBREUR, RBREU200.
+- For the actively selected asset view, maintain a rolling buffer of the last 200 ticks. Isolate the terminal digit of every single price tick instantly using: `const digit = parseInt(String(quote).replace('.','').slice(-1))`.
+
+2. ULTRA-ACCURATE AI DEEP SCANNER PANEL
+- Build a multi-index tracking grid that scans all 19 markets in the background concurrently for mathematical entry edges:
+  * EVEN/ODD TRACKER: Scans for severe directional streaks (e.g., 5 or more consecutive Even or Odd digits). Highlight the market with the highest consecutive pattern imbalance.
+  * MATCHES/DIFFERS TRACKER (ABSENT DIGIT ENGINE): Computes the direct distribution frequency of digits 0-9 over moving windows of 20, 50, and 100 ticks. Instantly flag when any single digit has been absent for 20+ consecutive ticks, revealing a high-probability "Differs" entry spot.
+- Display a prominent, glowing top card titled [AI BEST ENTRY PICK]. It must continuously display the single index asset and digit selection containing the absolute highest win-probability edge across all markets. Include a button labeled [AUTO-SWITCH TO TARGET MARKET] that instantly updates the primary analytical view to that chosen asset.
+
+3. SIMPLE 2-COLUMN MARKET ANALYTICS VIEW
+- Left Column — Even/Odd Parity Terminal:
+  * Display the last 30 live digit chips inside a scrolling horizon bar, colored cleanly (Even = Blue, Odd = Amber).
+  * Show the single latest incoming digit in a giant font (min 64px) with a pulsing background aura that signals its parity.
+  * Include a real-time Counter box displaying the exact text: "Active Even Streak: X" or "Active Odd Streak: Y".
+- Right Column — Matches/Differs Ring Engine:
+  * Render 10 circular SVG percentage meters (one for each digit from 0 to 9) displaying its exact statistical frequency inside the chosen tick window.
+  * Color the meters dynamically based on historical probability: highest frequency digit = Vibrant Emerald (Hot), lowest frequency digit = Deep Crimson (Cold).
+
+4. PREMIUM COLORLESS GLASS VISUAL INTERFACE
+- Apply a highly polished, colorless glassmorphic styling system to all panels and dashboard boxes using Tailwind configurations: `bg-slate-500/10 backdrop-blur-xl border border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)]`.
+- Embellish the top frame header of every metrics card with a soft, warm amber neon accent glow (`shadow-[0_-4px_12px_-2px_rgba(245,158,11,0.15)]`).
+- Keep the interface completely clear of empty configurations, warnings, or empty setup boxes. Ensure every digit frequency and streak calculation initializes seamlessly from the moment the app loads.

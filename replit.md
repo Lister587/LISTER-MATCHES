@@ -1,44 +1,62 @@
-# [Project name]
+# Deriv Market Analysis Scanner
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A real-time analytics dashboard that monitors 19 Deriv volatile index markets simultaneously, scanning for Even/Odd streaks and Matches/Differs entry signals.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/api-server run dev` — run the API server (port 8080, serves /api + WebSocket)
+- `pnpm --filter @workspace/deriv-scanner run dev` — run the frontend (port assigned by workflow)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Frontend: React 18 + Vite + Tailwind CSS (glassmorphic dark theme)
+- Backend: Express 5 + `ws` WebSocket library
+- No database — pure real-time streaming app
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/deriv-scanner/src/` — React frontend
+  - `src/hooks/useTickerStream.ts` — WebSocket hook for single symbol
+  - `src/hooks/useScannerStream.ts` — WebSocket hook for all 19 symbols
+  - `src/lib/digitAnalytics.ts` — pure analytics functions
+  - `src/pages/Dashboard.tsx` — main dashboard page
+- `artifacts/api-server/src/ws/deriv-proxy.ts` — WebSocket proxy to Deriv API
+- `artifacts/api-server/src/index.ts` — HTTP + WebSocket server entry point
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- WebSocket proxy: backend connects to `wss://ws.derivws.com/websockets/v3?app_id=1089` and forwards ticks to frontend clients — avoids CORS restrictions on direct browser connections
+- Two WS endpoints: `/api/ws/ticker?symbol=X` (single, for active view) and `/api/ws/scanner` (all 19 symbols for the AI scanner)
+- All analytics (streaks, frequency distribution, absent digit detection) computed client-side in React
+- No database needed — pure streaming analytics, no persistence
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Real-time scanning of 19 Deriv volatile index markets:
+- **Even/Odd Tracker**: detects consecutive parity streaks across all markets
+- **Absent Digit Engine**: flags digits absent for 20+ ticks (high-probability DIFFERS entry)
+- **AI Best Entry Pick**: surfaces the single highest-edge opportunity across all 19 markets
+- **Market Analytics View**: last 30 digit chips, giant live digit, 10 SVG frequency rings
+
+## WebSocket Endpoints
+
+- `ws[s]://{host}/api/ws/ticker?symbol=R_10` — single symbol tick stream (raw Deriv passthrough)
+- `ws[s]://{host}/api/ws/scanner` — all-symbol normalized scanner stream
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- No user accounts, no login, no database — pure analytics tool
+- Glassmorphic dark UI: bg-slate-500/10 backdrop-blur-xl border border-white/10
+- Amber neon card header glow: shadow-[0_-4px_12px_-2px_rgba(245,158,11,0.15)]
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- The api-server uses `http.createServer(app)` + `WebSocketServer` — not the default `app.listen()` — so WebSocket upgrades work correctly
+- WebSocket connections to `/api/ws/*` are routed through the `/api` path in artifact.toml (no separate path entry needed)
+- Digit extraction: `parseInt(String(quote).replace('.','').slice(-1))` — must use exactly this formula
 
 ## Pointers
 
