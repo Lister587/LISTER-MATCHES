@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTickerStream } from "@/hooks/useTickerStream";
 import { useScannerStream } from "@/hooks/useScannerStream";
 import {
@@ -9,7 +9,7 @@ import {
   computeFrequency,
   type StrategyFilter,
 } from "@/lib/digitAnalytics";
-import { Activity, RadioReceiver, Zap } from "lucide-react";
+import { Activity, RadioReceiver, Zap, Clock, Target, Crosshair } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const STRATEGY_TABS: { label: string; value: StrategyFilter }[] = [
@@ -26,18 +26,42 @@ const TRADE_TYPE_COLOR: Record<string, string> = {
   ODD: "text-amber-400",
 };
 
+const TRADE_TYPE_BG: Record<string, string> = {
+  DIFFERS: "bg-purple-500/15 border-purple-500/30 text-purple-300",
+  MATCHES: "bg-emerald-500/15 border-emerald-500/30 text-emerald-300",
+  EVEN: "bg-blue-500/15 border-blue-500/30 text-blue-300",
+  ODD: "bg-amber-500/15 border-amber-500/30 text-amber-300",
+};
+
 export default function Dashboard() {
   const [activeSymbol, setActiveSymbol] = useState("R_10");
   const [strategyFilter, setStrategyFilter] = useState<StrategyFilter>("ALL");
   const [windowSize, setWindowSize] = useState<20 | 50 | 100>(100);
+  const [tickPulse, setTickPulse] = useState(false);
+  const prevDigitsLen = useRef(0);
+  const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { digits: activeDigits, status: activeStatus } = useTickerStream(activeSymbol);
   const { data: scannerData, status: scannerStatus } = useScannerStream();
 
+  useEffect(() => {
+    if (activeDigits.length !== prevDigitsLen.current) {
+      prevDigitsLen.current = activeDigits.length;
+      setTickPulse(true);
+      if (pulseTimer.current) clearTimeout(pulseTimer.current);
+      pulseTimer.current = setTimeout(() => setTickPulse(false), 220);
+    }
+  }, [activeDigits.length]);
+
+  useEffect(() => {
+    return () => {
+      if (pulseTimer.current) clearTimeout(pulseTimer.current);
+    };
+  }, []);
+
   const bestPick = computeBestPick(scannerData, strategyFilter);
   const activeStreak = computeStreak(activeDigits);
   const frequencies = computeFrequency(activeDigits, windowSize);
-
   const latestDigit = activeDigits.length > 0 ? activeDigits[activeDigits.length - 1] : null;
   const isConnected = scannerStatus === "connected" || activeStatus === "connected";
 
@@ -79,8 +103,6 @@ export default function Dashboard() {
             <h2 className="text-amber-500 font-bold tracking-widest flex items-center gap-2">
               <Activity className="w-5 h-5" /> [AI BEST ENTRY PICK]
             </h2>
-
-            {/* Strategy selector tabs */}
             <div className="flex flex-wrap gap-2">
               {STRATEGY_TABS.map(tab => {
                 const isActive = strategyFilter === tab.value;
@@ -102,29 +124,80 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Best pick readout */}
+          {/* Main readout */}
           {bestPick.score > 0 ? (
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="flex items-center gap-6">
-                <div className="text-4xl font-bold text-white bg-slate-900/50 px-6 py-4 rounded-lg border border-slate-700">
-                  {bestPick.symbol}
+            <div className="flex flex-col gap-5">
+              {/* Top row: symbol + trade type + auto-switch */}
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex items-center gap-6">
+                  <div className="text-4xl font-bold text-white bg-slate-900/50 px-6 py-4 rounded-lg border border-slate-700">
+                    {bestPick.symbol}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className={`text-2xl font-bold uppercase tracking-wider ${TRADE_TYPE_COLOR[bestPick.type] ?? "text-white"}`}>
+                      {bestPick.type}{bestPick.targetDigit >= 0 ? ` ${bestPick.targetDigit}` : ""}
+                    </span>
+                    <span className="text-slate-500 text-xs">{bestPick.detail}</span>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <span className={`text-2xl font-bold uppercase tracking-wider ${TRADE_TYPE_COLOR[bestPick.type] ?? "text-white"}`}>
-                    {bestPick.type}{bestPick.targetDigit >= 0 ? ` ${bestPick.targetDigit}` : ""}
-                  </span>
-                  <span className="text-slate-500 text-sm">Score: {typeof bestPick.score === "number" && bestPick.type === "MATCHES" ? `${bestPick.score.toFixed(1)}%` : bestPick.score}</span>
-                  <span className="text-slate-500 text-xs">{bestPick.detail}</span>
+                <button
+                  data-testid="button-auto-switch"
+                  onClick={() => setActiveSymbol(bestPick.symbol)}
+                  className="px-6 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 border border-amber-500/50 rounded-lg uppercase tracking-wider font-bold transition-all whitespace-nowrap"
+                >
+                  [Auto-Switch to Target Market]
+                </button>
+              </div>
+
+              {/* Target data sub-grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-white/5 pt-4">
+                {/* Target Digit badge */}
+                <div className="flex items-center gap-3 bg-slate-900/50 border border-slate-700/60 rounded-lg px-4 py-3">
+                  <Target className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-slate-500 text-xs uppercase tracking-wider">Target Digit</span>
+                    <span className={`font-bold text-lg leading-tight truncate ${TRADE_TYPE_COLOR[bestPick.type] ?? "text-white"}`}>
+                      {bestPick.targetDigitLabel}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Duration badge */}
+                <div className="flex items-center gap-3 bg-slate-900/50 border border-slate-700/60 rounded-lg px-4 py-3">
+                  <Clock className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-slate-500 text-xs uppercase tracking-wider">Duration</span>
+                    <span className="font-bold text-lg text-white leading-tight">
+                      {bestPick.optimalTicks} {bestPick.optimalTicks === 1 ? "Tick" : "Ticks"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Trade type badge */}
+                <div className={`flex items-center gap-3 border rounded-lg px-4 py-3 ${TRADE_TYPE_BG[bestPick.type] ?? "bg-slate-900/50 border-slate-700/60"}`}>
+                  <Crosshair className="w-4 h-4 flex-shrink-0 opacity-60" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs uppercase tracking-wider opacity-60">Contract</span>
+                    <span className="font-bold text-lg leading-tight uppercase tracking-wider">
+                      {bestPick.type}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <button
-                data-testid="button-auto-switch"
-                onClick={() => setActiveSymbol(bestPick.symbol)}
-                className="px-6 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 border border-amber-500/50 rounded-lg uppercase tracking-wider font-bold transition-all whitespace-nowrap"
-              >
-                [Auto-Switch to Target Market]
-              </button>
+              {/* Entry trigger row */}
+              <div className="flex items-center gap-3 bg-slate-900/40 border border-slate-700/40 rounded-lg px-4 py-3">
+                {/* Tick-sync pulse dot */}
+                <div className="relative flex-shrink-0 w-3 h-3">
+                  <span className={`absolute inset-0 rounded-full transition-colors duration-75 ${tickPulse ? "bg-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.6)]" : "bg-emerald-700"}`} />
+                </div>
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-slate-500 text-xs uppercase tracking-wider">Entry Point Trigger</span>
+                  <span className="text-amber-200/80 text-sm font-medium leading-snug">
+                    {bestPick.entryTrigger}
+                  </span>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="text-slate-500 py-2 uppercase tracking-widest text-sm">

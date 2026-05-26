@@ -15,6 +15,9 @@ export interface BestPick {
   type: TradeType;
   targetDigit: number;
   detail: string;
+  targetDigitLabel: string;
+  optimalTicks: number;
+  entryTrigger: string;
 }
 
 export const extractDigit = (quote: number): number => {
@@ -77,11 +80,12 @@ export const computeFrequency = (digits: number[], windowSize: number) => {
   return freqs.map(f => (f / windowDigits.length) * 100);
 };
 
-const computeMatchesEdge = (digits: number[]): { digit: number; score: number } => {
-  if (digits.length < 10) return { digit: -1, score: -1 };
+const computeMatchesEdge = (digits: number[]): { digit: number; score: number; freq: number } => {
+  if (digits.length < 10) return { digit: -1, score: -1, freq: 0 };
 
   let bestDigit = -1;
   let bestScore = -1;
+  let bestFreq = 0;
 
   for (const window of [20, 50] as const) {
     const freqs = computeFrequency(digits, window);
@@ -89,18 +93,46 @@ const computeMatchesEdge = (digits: number[]): { digit: number; score: number } 
       if (freqs[d] > 18 && freqs[d] > bestScore) {
         bestScore = freqs[d];
         bestDigit = d;
+        bestFreq = freqs[d];
       }
     }
   }
 
-  return { digit: bestDigit, score: bestScore };
+  return { digit: bestDigit, score: bestScore, freq: bestFreq };
+};
+
+const differsOptimalTicks = (absenceCount: number): number => {
+  if (absenceCount >= 30) return 1;
+  if (absenceCount >= 25) return 2;
+  return 5;
+};
+
+const matchesOptimalTicks = (freq: number): number => {
+  if (freq >= 28) return 1;
+  if (freq >= 22) return 2;
+  return 5;
+};
+
+const parityOptimalTicks = (streakCount: number): number => {
+  if (streakCount >= 8) return 1;
+  if (streakCount >= 6) return 2;
+  return 3;
 };
 
 export const computeBestPick = (
   scannerData: Record<string, number[]>,
   filter: StrategyFilter = "ALL"
 ): BestPick => {
-  const empty: BestPick = { symbol: "", score: -1, type: "", targetDigit: -1, detail: "" };
+  const empty: BestPick = {
+    symbol: "",
+    score: -1,
+    type: "",
+    targetDigit: -1,
+    detail: "",
+    targetDigitLabel: "—",
+    optimalTicks: 1,
+    entryTrigger: "",
+  };
 
   let best: BestPick = { ...empty };
 
@@ -116,24 +148,32 @@ export const computeBestPick = (
 
     if (filter === "ALL" || filter === "DIFFERS") {
       if (absence.count >= 20) {
+        const ticks = differsOptimalTicks(absence.count);
         candidates.push({
           symbol,
           score: absence.count,
           type: "DIFFERS",
           targetDigit: absence.digit,
           detail: `Digit ${absence.digit} absent ${absence.count} ticks`,
+          targetDigitLabel: String(absence.digit),
+          optimalTicks: ticks,
+          entryTrigger: `Wait for digit ${absence.digit} to appear once, then buy Differs`,
         });
       }
     }
 
     if (filter === "ALL" || filter === "MATCHES") {
       if (matchesEdge.score >= 18) {
+        const ticks = matchesOptimalTicks(matchesEdge.freq);
         candidates.push({
           symbol,
           score: matchesEdge.score,
           type: "MATCHES",
           targetDigit: matchesEdge.digit,
-          detail: `Digit ${matchesEdge.digit} at ${matchesEdge.score.toFixed(1)}% frequency`,
+          detail: `Digit ${matchesEdge.digit} at ${matchesEdge.freq.toFixed(1)}% frequency`,
+          targetDigitLabel: String(matchesEdge.digit),
+          optimalTicks: ticks,
+          entryTrigger: `Enter immediately — digit ${matchesEdge.digit} appearing at ${matchesEdge.freq.toFixed(1)}% frequency`,
         });
       }
     }
@@ -141,12 +181,16 @@ export const computeBestPick = (
     if (filter === "ALL" || filter === "EVEN_ODD") {
       if (streak.count >= 6) {
         const entryType: TradeType = streak.direction === "ODD" ? "EVEN" : "ODD";
+        const ticks = parityOptimalTicks(streak.count);
         candidates.push({
           symbol,
           score: streak.count,
           type: entryType,
           targetDigit: -1,
           detail: `${streak.count} consecutive ${streak.direction} — fade with ${entryType}`,
+          targetDigitLabel: "N/A (Parity Trade)",
+          optimalTicks: ticks,
+          entryTrigger: `Enter immediately on next tick — ${streak.count}x ${streak.direction} streak detected`,
         });
       }
     }

@@ -1,0 +1,20 @@
+Modify the "[AI BEST ENTRY PICK]" header card component shown in image_7cedc1.jpg to include clear, explicit readouts for Target Entry Points, Target Digit, and Optimal Tick Duration.
+
+1. EXPAND THE DATA ENGINE FOR TRADING TARGETS
+- Update the AI scanner scoring payload to output three new specific variables for the recommended signal:
+  * target_digit: The specific digit (0-9) to execute against (e.g., Target Digit: 4 for Matches, or the Absent Digit for Differs). For Even/Odd, set this dynamically to "N/A (Parity Trade)".
+  * optimal_ticks: The recommended duration for the contract. Calculate this based on market volatility:
+    - For Differs/Matches: Default to 1-2 Ticks for fast scalp turnarounds or 5 Ticks if the distribution frequency requires a wider mathematical safety window.
+    - For Even/Odd: Set dynamically between 1 to 3 Ticks depending on the current velocity of the asset's active streak.
+  * entry_trigger_condition: Define the exact market condition required to click buy (e.g., "Trigger: Enter immediately on next Even tick" or "Trigger: Wait for Digit 9 to appear once, then buy Differs").
+
+2. RESTRUCTURE THE AI CARD UI LAYOUT
+- Inside the top card container from image_7cedc1.jpg, arrange the new targets using a clean, scannable sub-grid under the main asset name:
+  * Add a prominent badge labeled: "TARGET DIGIT: [X]" with a subtle contrasting background color chip.
+  * Add a badge labeled: "DURATION: [X] TICKS".
+  * Add a text box directly underneath labeled: "ENTRY POINT TRIGGER: [Condition Text]" using a highly readable, muted golden font to keep focus razor-sharp.
+
+3. INTEGRATE LIVE COUNTDOWN / PULSE ON TRIGGER
+- Add a tiny, highly responsive flashing green indicator dot next to the Entry Point Trigger text. The dot must flash exactly in sync with every incoming tick from the selected market, confirming that the tool is calculating the exact millisecond entry opportunity.
+
+Ensure that the design continues to use the existing colorless glassmorphism theme (`bg-slate-500/10 backdrop-blur-xl border border-white/10`) and does not distort any elements of the layout established in image_7cedc1.jpg.
