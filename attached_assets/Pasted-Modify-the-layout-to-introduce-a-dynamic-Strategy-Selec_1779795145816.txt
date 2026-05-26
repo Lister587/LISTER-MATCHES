@@ -1,0 +1,21 @@
+Modify the layout to introduce a dynamic Strategy Selector, allowing the AI Scanner card shown in image_7cedc1.jpg to calculate and toggle between DIFFERS, MATCHES, EVEN, and ODD setups.
+
+1. ADD STRATEGY SELECTOR TABS
+- In the top header or directly inside the "[AI BEST ENTRY PICK]" card component, insert a horizontal pill-shaped tab selector.
+- The tabs must be labeled: [ALL MATCHES/DIFFERS], [MATCHES ONLY], [DIFFERS ONLY], [EVEN/ODD ONLY].
+- Apply a matching dark glassmorphic style with a soft amber border highlight on the active tab state to match the existing layout theme in image_7cedc1.jpg.
+
+2. EXPAND THE AI SCANNER MATHEMATICAL LOGIC
+- Update the background scanner loop to calculate score metrics for all four contract variations simultaneously:
+  * MATCHES EDGE: Look for a digit that has spiked abnormally high in frequency (e.g., > 18% inside the 20 or 50 tick window). Score it based on current momentum.
+  * DIFFERS EDGE: Keep the existing logic (high score for an absent digit with 20+ consecutive misses).
+  * EVEN EDGE: Scan the 19 markets for severe ODD streaks (e.g., 6 or more consecutive Odd digits). This triggers a high-probability "EVEN" entry.
+  * ODD EDGE: Scan the 19 markets for severe EVEN streaks (e.g., 6 or more consecutive Even digits). This triggers a high-probability "ODD" entry.
+
+3. DYNAMIC CONTENT RENDERING (AI TOP CARD)
+- Based on the user's selected tab filter, update the large text readout in the center of the AI card (which currently reads "DIFFERS 0" in image_7cedc1.jpg).
+- If "ALL MATCHES/DIFFERS" is selected, compare the mathematical scores of all active strategies and automatically project the absolute highest edge (e.g., showing "MATCHES 4", "EVEN", "ODD", or "DIFFERS 0" dynamically with its corresponding index asset).
+- Ensure clicking '[AUTO-SWITCH TO TARGET MARKET]' updates both the primary chart asset dropdown and synchronizes the relevant metrics panel highlight.
+
+4. UI CLEANUP
+- Ensure no layout layout breakages occur, maintaining the exact responsive proportions, sizing, and styling shown in image_7cedc1.jpg.
