@@ -1,0 +1,44 @@
+Modify the layout and backend state processing loops to restrict the asset tracking matrix, separate the strategy modes, and implement a strategic consecutive win-locking pipeline.
+
+========================================================================
+MODULE 01: RESTRICTED VOLATILITY ASSET POOL
+========================================================================
+- Completely remove all Boom, Crash, Step, and Range Break indices from the application state, background workers, and UI dropdown components shown in image_7d836f.png.
+- Restrict the active background data connection to stream and analyze ONLY these 10 core volatility markets:
+  * R_10 -> "Volatility 10 Index"
+  * R_25 -> "Volatility 25 Index"
+  * R_50 -> "Volatility 50 Index"
+  * R_75 -> "Volatility 75 Index"
+  * R_100 -> "Volatility 100 Index"
+  * 1HZ10V -> "Volatility 10 (1s) Index"
+  * 1HZ25V -> "Volatility 25 (1s) Index"
+  * 1HZ50V -> "Volatility 50 (1s) Index"
+  * 1HZ75V -> "Volatility 75 (1s) Index"
+  * 1HZ100V -> "Volatility 100 (1s) Index"
+
+========================================================================
+MODULE 02: ABSOLUTE STRATEGY INDEPENDENCE (4 SEPARATE CHANNELS)
+========================================================================
+- Break down the tracking tabs so each calculation channel functions completely alone. The 4 individual strategy modes must be:
+  * MATCHES ONLY: Scans solely for a digit spiking to a critical mathematical maximum frequency.
+  * DIFFERS ONLY: Scans solely for an absent digit hidden across consecutive tick gaps.
+  * EVEN ONLY: Scans solely for heavy Odd streaks to target a clean Even recovery position.
+  * ODD ONLY: Scans solely for heavy Even streaks to target a clean Odd recovery position.
+
+========================================================================
+MODULE 03: AUTOMATED CONFIRMED-WIN SIGNAL VALVE
+========================================================================
+- Implement a logical gating mechanism for live entries: Once an analytical edge is detected across the 10 volatility markets, the scanner must lock onto that entry recommendation frame.
+- Freeze all fresh market scanning. The tool must wait silently on that single analysis position until the real-time tick stream confirms a successful contract outcome (e.g., the subsequent ticks hit the targeted outcome, validating a confirmed mathematical win). Only after this victory confirmation is registered can the background loop release its valve to hunt for a new entry.
+
+========================================================================
+MODULE 04: PERSISTENT EDGE TARGET LOCK (1-MINUTE OR 3-WIN CYCLE)
+========================================================================
+- Create an automated persistence timer and counter system inside the global data state machine:
+- If a specific Volatility Index shows a massive, high-probability win potential edge, lock the user interface tracking views completely onto that index asset.
+- Force the application to hold its analytical focus on that specific volatility market until ONE of the following conditions is completely met:
+  1. TIME ELAPSED: Exactly 60 seconds pass since the initial lock engagement.
+  2. MULTI-ANALYSIS VICTORY TRIPLE: The user achieves exactly 3 successful confirmed wins using different sequential analytical readings on that exact same volatility index.
+- Once either limit is hit, break the persistent edge lock, reset the state metrics, and open the background channels to scan the remaining core volatility indices for the next high-value entry position.
+
+Ensure all layout updates strictly adapt to the existing sleek colorless glassmorphic themes without breaking the interface grid structure.

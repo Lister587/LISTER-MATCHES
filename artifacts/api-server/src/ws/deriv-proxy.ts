@@ -7,16 +7,12 @@ const DERIV_WS_URL = "wss://ws.derivws.com/websockets/v3?app_id=1089";
 const ALL_SYMBOLS = [
   "R_10", "R_25", "R_50", "R_75", "R_100",
   "1HZ10V", "1HZ25V", "1HZ50V", "1HZ75V", "1HZ100V",
-  "BOOM300N", "BOOM500", "BOOM1000",
-  "CRASH300N", "CRASH500", "CRASH1000",
-  "stpRNG", "RBREUR", "RBREU200",
 ];
 
 export function createDerivProxy(wss: WebSocketServer): void {
   wss.on("connection", (clientWs: WebSocket, req: IncomingMessage) => {
     const url = req.url ?? "";
 
-    // Route: /api/ws/ticker?symbol=R_10 (single symbol stream)
     if (url.startsWith("/api/ws/ticker")) {
       const qs = new URL(url, "http://localhost").searchParams;
       const symbol = qs.get("symbol");
@@ -28,7 +24,6 @@ export function createDerivProxy(wss: WebSocketServer): void {
       return;
     }
 
-    // Route: /api/ws/scanner (all-symbols background scanner stream)
     if (url.startsWith("/api/ws/scanner")) {
       handleScannerStream(clientWs);
       return;

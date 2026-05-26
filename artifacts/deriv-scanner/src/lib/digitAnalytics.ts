@@ -1,9 +1,6 @@
 export const ALL_SYMBOLS = [
   "R_10", "R_25", "R_50", "R_75", "R_100",
   "1HZ10V", "1HZ25V", "1HZ50V", "1HZ75V", "1HZ100V",
-  "BOOM300N", "BOOM500", "BOOM1000",
-  "CRASH300N", "CRASH500", "CRASH1000",
-  "stpRNG", "RBREUR", "RBREU200",
 ];
 
 export const SYMBOL_NAMES: Record<string, string> = {
@@ -17,18 +14,9 @@ export const SYMBOL_NAMES: Record<string, string> = {
   "1HZ50V": "Volatility 50 (1s) Index",
   "1HZ75V": "Volatility 75 (1s) Index",
   "1HZ100V": "Volatility 100 (1s) Index",
-  BOOM300N: "Boom 300 Index",
-  BOOM500: "Boom 500 Index",
-  BOOM1000: "Boom 1000 Index",
-  CRASH300N: "Crash 300 Index",
-  CRASH500: "Crash 500 Index",
-  CRASH1000: "Crash 1000 Index",
-  stpRNG: "Step Index",
-  RBREUR: "Range Break 100 Index",
-  RBREU200: "Range Break 200 Index",
 };
 
-export type StrategyFilter = "ALL" | "MATCHES" | "DIFFERS" | "EVEN_ODD";
+export type StrategyFilter = "MATCHES" | "DIFFERS" | "EVEN" | "ODD";
 export type TradeType = "MATCHES" | "DIFFERS" | "EVEN" | "ODD" | "";
 
 export interface BestPick {
@@ -119,7 +107,7 @@ const computeMatchesEdge = (digits: number[]) => {
 
 export const computeBestPick = (
   scannerData: Record<string, number[]>,
-  filter: StrategyFilter = "ALL"
+  filter: StrategyFilter
 ): BestPick => {
   const empty: BestPick = {
     symbol: "", score: -1, type: "", targetDigit: -1,
@@ -131,57 +119,69 @@ export const computeBestPick = (
     const digits = scannerData[symbol] || [];
     if (digits.length < 5) continue;
 
-    const streak = computeStreak(digits);
-    const absence = computeAbsence(digits);
-    const matchesEdge = computeMatchesEdge(digits);
-    const candidates: BestPick[] = [];
+    let candidate: BestPick | null = null;
 
-    if (filter === "ALL" || filter === "DIFFERS") {
+    if (filter === "DIFFERS") {
+      const absence = computeAbsence(digits);
       if (absence.count >= 20) {
         const ticks = differsOptimalTicks(absence.count);
-        candidates.push({
+        candidate = {
           symbol, score: absence.count, type: "DIFFERS",
           targetDigit: absence.digit,
           detail: `Digit ${absence.digit} absent ${absence.count} ticks`,
           targetDigitLabel: String(absence.digit),
           optimalTicks: ticks,
-          entryTrigger: `Wait for digit ${absence.digit} to appear once, then buy Differs`,
-        });
+          entryTrigger: `Wait for digit ${absence.digit} to appear once, then enter Differs`,
+        };
       }
     }
 
-    if (filter === "ALL" || filter === "MATCHES") {
-      if (matchesEdge.score >= 18) {
-        const ticks = matchesOptimalTicks(matchesEdge.freq);
-        candidates.push({
-          symbol, score: matchesEdge.score, type: "MATCHES",
-          targetDigit: matchesEdge.digit,
-          detail: `Digit ${matchesEdge.digit} at ${matchesEdge.freq.toFixed(1)}% frequency`,
-          targetDigitLabel: String(matchesEdge.digit),
+    if (filter === "MATCHES") {
+      const me = computeMatchesEdge(digits);
+      if (me.score >= 18) {
+        const ticks = matchesOptimalTicks(me.freq);
+        candidate = {
+          symbol, score: me.score, type: "MATCHES",
+          targetDigit: me.digit,
+          detail: `Digit ${me.digit} at ${me.freq.toFixed(1)}% frequency`,
+          targetDigitLabel: String(me.digit),
           optimalTicks: ticks,
-          entryTrigger: `Enter immediately — digit ${matchesEdge.digit} at ${matchesEdge.freq.toFixed(1)}% frequency`,
-        });
+          entryTrigger: `Enter immediately — digit ${me.digit} at ${me.freq.toFixed(1)}% frequency`,
+        };
       }
     }
 
-    if (filter === "ALL" || filter === "EVEN_ODD") {
-      if (streak.count >= 6) {
-        const entryType: TradeType = streak.direction === "ODD" ? "EVEN" : "ODD";
+    if (filter === "EVEN") {
+      const streak = computeStreak(digits);
+      if (streak.direction === "ODD" && streak.count >= 6) {
         const ticks = parityOptimalTicks(streak.count);
-        candidates.push({
-          symbol, score: streak.count, type: entryType,
+        candidate = {
+          symbol, score: streak.count, type: "EVEN",
           targetDigit: -1,
-          detail: `${streak.count} consecutive ${streak.direction} — fade with ${entryType}`,
+          detail: `${streak.count} consecutive ODD — fade with EVEN`,
           targetDigitLabel: "N/A (Parity Trade)",
           optimalTicks: ticks,
-          entryTrigger: `Enter immediately on next tick — ${streak.count}x ${streak.direction} streak detected`,
-        });
+          entryTrigger: `Enter immediately — ${streak.count}x ODD streak, buy EVEN recovery`,
+        };
       }
     }
 
-    for (const c of candidates) {
-      if (c.score > best.score) best = c;
+    if (filter === "ODD") {
+      const streak = computeStreak(digits);
+      if (streak.direction === "EVEN" && streak.count >= 6) {
+        const ticks = parityOptimalTicks(streak.count);
+        candidate = {
+          symbol, score: streak.count, type: "ODD",
+          targetDigit: -1,
+          detail: `${streak.count} consecutive EVEN — fade with ODD`,
+          targetDigitLabel: "N/A (Parity Trade)",
+          optimalTicks: ticks,
+          entryTrigger: `Enter immediately — ${streak.count}x EVEN streak, buy ODD recovery`,
+        };
+      }
     }
+
+    if (candidate && candidate.score > best.score) best = candidate;
   }
 
   return best;
