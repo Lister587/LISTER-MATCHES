@@ -1,15 +1,25 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useTickerStream } from "@/hooks/useTickerStream";
 import { useScannerStream } from "@/hooks/useScannerStream";
+import { useAudio } from "@/hooks/useAudio";
+import FloatingMiniTracker from "@/components/FloatingMiniTracker";
 import {
   ALL_SYMBOLS,
+  SYMBOL_NAMES,
   computeBestPick,
   computeStreak,
   computeAbsence,
   computeFrequency,
+  computeHistoryDots,
+  computePoissonLayer,
   type StrategyFilter,
+  type BestPick,
 } from "@/lib/digitAnalytics";
-import { Activity, RadioReceiver, Zap, Clock, Target, Crosshair } from "lucide-react";
+import {
+  Activity, RadioReceiver, Zap, Clock, Target, Crosshair,
+  Lock, ScanLine, Volume2, VolumeX, PictureInPicture2, Copy, Check,
+  AlertTriangle,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const STRATEGY_TABS: { label: string; value: StrategyFilter }[] = [
@@ -33,37 +43,140 @@ const TRADE_TYPE_BG: Record<string, string> = {
   ODD: "bg-amber-500/15 border-amber-500/30 text-amber-300",
 };
 
+const TYPE_CODE: Record<string, string> = {
+  DIFFERS: "DIFF", MATCHES: "MTCH", EVEN: "EVEN", ODD: "ODD",
+};
+
+const DOT_AGE_CLASS = (age: number) => {
+  if (age === 0) return "bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.8)]";
+  if (age <= 2) return "bg-emerald-500/80";
+  if (age <= 5) return "bg-emerald-700/60";
+  if (age <= 10) return "bg-slate-600/60";
+  return "bg-slate-800";
+};
+
 export default function Dashboard() {
   const [activeSymbol, setActiveSymbol] = useState("R_10");
   const [strategyFilter, setStrategyFilter] = useState<StrategyFilter>("ALL");
   const [windowSize, setWindowSize] = useState<20 | 50 | 100>(100);
   const [tickPulse, setTickPulse] = useState(false);
-  const prevDigitsLen = useRef(0);
-  const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isScannerLocked, setIsScannerLocked] = useState(false);
+  const [lockedPick, setLockedPick] = useState<BestPick | null>(null);
+  const [showMiniTracker, setShowMiniTracker] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const pulseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevDigitsLenRef = useRef(0);
+  const prevMaxStreakRef = useRef(0);
+  const tickTimestampsRef = useRef<number[]>([]);
 
   const { digits: activeDigits, status: activeStatus } = useTickerStream(activeSymbol);
   const { data: scannerData, status: scannerStatus } = useScannerStream();
+  const { muted, toggleMute, playEven, playOdd, playStreak } = useAudio();
 
-  useEffect(() => {
-    if (activeDigits.length !== prevDigitsLen.current) {
-      prevDigitsLen.current = activeDigits.length;
-      setTickPulse(true);
-      if (pulseTimer.current) clearTimeout(pulseTimer.current);
-      pulseTimer.current = setTimeout(() => setTickPulse(false), 220);
-    }
-  }, [activeDigits.length]);
+  const currentBestPick = computeBestPick(scannerData, strategyFilter);
+  const displayPick = isScannerLocked && lockedPick ? lockedPick : currentBestPick;
 
-  useEffect(() => {
-    return () => {
-      if (pulseTimer.current) clearTimeout(pulseTimer.current);
-    };
-  }, []);
-
-  const bestPick = computeBestPick(scannerData, strategyFilter);
   const activeStreak = computeStreak(activeDigits);
   const frequencies = computeFrequency(activeDigits, windowSize);
+  const poissonFlags = computePoissonLayer(activeDigits);
   const latestDigit = activeDigits.length > 0 ? activeDigits[activeDigits.length - 1] : null;
   const isConnected = scannerStatus === "connected" || activeStatus === "connected";
+
+  // Tick velocity — avg ms between last 5 ticks
+  const tickVelocityMs = useMemo(() => {
+    const ts = tickTimestampsRef.current;
+    if (ts.length < 2) return null;
+    const deltas = ts.slice(1).map((t, i) => t - ts[i]);
+    return deltas.reduce((a, b) => a + b, 0) / deltas.length;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDigits.length]);
+
+  // Velocity-adjusted optimal ticks
+  const velocityAdjustedTicks = useMemo(() => {
+    if (displayPick.score <= 0) return 1;
+    let ticks = displayPick.optimalTicks;
+    if (tickVelocityMs !== null) {
+      if (tickVelocityMs < 500) ticks = Math.max(1, ticks - 1);
+      else if (tickVelocityMs > 2000) ticks = Math.min(5, ticks + 1);
+    }
+    return ticks;
+  }, [tickVelocityMs, displayPick]);
+
+  // Market mutation detection
+  const mutationDetected = useMemo(() => {
+    if (!isScannerLocked || !lockedPick || lockedPick.targetDigit < 0) return false;
+    const target = lockedPick.targetDigit;
+    for (const sym of ALL_SYMBOLS) {
+      if (sym === lockedPick.symbol) continue;
+      const last3 = (scannerData[sym] || []).slice(-3);
+      if (last3.filter(d => d === target).length >= 2) return true;
+    }
+    return false;
+  }, [isScannerLocked, lockedPick, scannerData]);
+
+  // Execution string
+  const execString = displayPick.score > 0
+    ? `${SYMBOL_NAMES[displayPick.symbol] ?? displayPick.symbol}-${TYPE_CODE[displayPick.type] ?? displayPick.type}-D${displayPick.targetDigit >= 0 ? displayPick.targetDigit : "P"}-T${velocityAdjustedTicks}`
+    : "NO SIGNAL";
+
+  // On new tick: audio, haptic, pulse, timestamps
+  useEffect(() => {
+    if (activeDigits.length > prevDigitsLenRef.current) {
+      prevDigitsLenRef.current = activeDigits.length;
+      tickTimestampsRef.current.push(Date.now());
+      if (tickTimestampsRef.current.length > 6) tickTimestampsRef.current.shift();
+
+      const last = activeDigits[activeDigits.length - 1];
+      if (last % 2 === 0) playEven();
+      else playOdd();
+
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(25);
+
+      setTickPulse(true);
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+      pulseTimerRef.current = setTimeout(() => setTickPulse(false), 220);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDigits.length]);
+
+  // Streak milestone audio alert
+  useEffect(() => {
+    let maxStreak = 0;
+    for (const sym of ALL_SYMBOLS) {
+      const { count } = computeStreak(scannerData[sym] || []);
+      if (count > maxStreak) maxStreak = count;
+    }
+    if (maxStreak >= 5 && maxStreak > prevMaxStreakRef.current) {
+      prevMaxStreakRef.current = maxStreak;
+      playStreak();
+    } else if (maxStreak < 5) {
+      prevMaxStreakRef.current = 0;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scannerData]);
+
+  useEffect(() => () => {
+    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+  }, []);
+
+  const handleEngageEdge = useCallback(() => {
+    setLockedPick(currentBestPick);
+    setActiveSymbol(currentBestPick.symbol);
+    setIsScannerLocked(true);
+  }, [currentBestPick]);
+
+  const handleUnlock = useCallback(() => {
+    setLockedPick(null);
+    setIsScannerLocked(false);
+  }, []);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(execString).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  }, [execString]);
 
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-slate-200 font-mono p-4 flex flex-col gap-6 overflow-x-hidden">
@@ -76,14 +189,45 @@ export default function Dashboard() {
             Deriv Market Scanner
           </h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
+          {/* Mute toggle */}
+          <button
+            onClick={toggleMute}
+            data-testid="button-mute-toggle"
+            title={muted ? "Unmute audio" : "Mute audio"}
+            className="p-2 rounded-lg border border-slate-700 bg-slate-900/50 hover:border-slate-500 transition-colors"
+          >
+            {muted
+              ? <VolumeX className="w-4 h-4 text-slate-500" />
+              : <Volume2 className="w-4 h-4 text-emerald-400" />}
+          </button>
+
+          {/* Pop-out mini tracker */}
+          <button
+            onClick={() => setShowMiniTracker(v => !v)}
+            data-testid="button-popout"
+            className={`px-3 py-2 rounded-lg border text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-2 ${
+              showMiniTracker
+                ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
+                : "bg-slate-900/50 border-slate-700 text-slate-400 hover:border-slate-500"
+            }`}
+          >
+            <PictureInPicture2 className="w-3 h-3" />
+            {showMiniTracker ? "Close Mini" : "[Pop-Out Mini Tracker]"}
+          </button>
+
+          {/* Symbol dropdown */}
           <select
             value={activeSymbol}
             onChange={(e) => setActiveSymbol(e.target.value)}
-            className="bg-slate-900 border border-slate-700 text-slate-200 px-4 py-2 rounded-lg outline-none focus:border-amber-500 transition-colors uppercase font-bold"
+            className="bg-slate-900 border border-slate-700 text-slate-200 px-4 py-2 rounded-lg outline-none focus:border-amber-500 transition-colors font-bold max-w-[200px]"
           >
-            {ALL_SYMBOLS.map(sym => <option key={sym} value={sym}>{sym}</option>)}
+            {ALL_SYMBOLS.map(sym => (
+              <option key={sym} value={sym}>{SYMBOL_NAMES[sym] ?? sym}</option>
+            ))}
           </select>
+
+          {/* Connection status */}
           <div className="flex items-center gap-2 text-sm">
             <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
             <span className="uppercase text-slate-400">{isConnected ? "CONNECTED" : scannerStatus.toUpperCase()}</span>
@@ -92,17 +236,29 @@ export default function Dashboard() {
       </header>
 
       {/* AI BEST ENTRY PICK */}
-      <div className="rounded-xl bg-slate-500/10 backdrop-blur-xl border border-white/10 shadow-[0_-4px_12px_-2px_rgba(245,158,11,0.15),inset_0_1px_1px_rgba(255,255,255,0.15)] p-6 relative overflow-hidden">
+      <div className={`rounded-xl bg-slate-500/10 backdrop-blur-xl border transition-all shadow-[0_-4px_12px_-2px_rgba(245,158,11,0.15),inset_0_1px_1px_rgba(255,255,255,0.15)] p-6 relative overflow-hidden ${
+        mutationDetected ? "border-rose-500/60 shadow-[0_-4px_12px_-2px_rgba(244,63,94,0.25),inset_0_1px_1px_rgba(255,255,255,0.1)]" : "border-white/10"
+      }`}>
         <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none">
           <RadioReceiver className="w-32 h-32 text-amber-500" />
         </div>
 
         <div className="flex flex-col gap-5 relative z-10">
-          {/* Card title + strategy tabs */}
+          {/* Title row: lock icon + label + strategy tabs */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-amber-500 font-bold tracking-widest flex items-center gap-2">
-              <Activity className="w-5 h-5" /> [AI BEST ENTRY PICK]
-            </h2>
+            <div className="flex items-center gap-3">
+              {isScannerLocked
+                ? <Lock className="w-4 h-4 text-rose-400" />
+                : <ScanLine className="w-4 h-4 text-emerald-400" />}
+              <div>
+                <h2 className="text-amber-500 font-bold tracking-widest flex items-center gap-2">
+                  <Activity className="w-5 h-5" /> [AI BEST ENTRY PICK]
+                </h2>
+                <p className={`text-xs uppercase tracking-wider mt-0.5 ${isScannerLocked ? "text-rose-400/70" : "text-emerald-400/70"}`}>
+                  {isScannerLocked ? "LOCKED ON CURRENT VOLATILITY" : "SCANNING ALL VOLATILE INDEXES..."}
+                </p>
+              </div>
+            </div>
             <div className="flex flex-wrap gap-2">
               {STRATEGY_TABS.map(tab => {
                 const isActive = strategyFilter === tab.value;
@@ -125,78 +281,113 @@ export default function Dashboard() {
           </div>
 
           {/* Main readout */}
-          {bestPick.score > 0 ? (
+          {displayPick.score > 0 ? (
             <div className="flex flex-col gap-5">
-              {/* Top row: symbol + trade type + auto-switch */}
+              {/* Symbol + type + dual-state button */}
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div className="flex items-center gap-6">
-                  <div className="text-4xl font-bold text-white bg-slate-900/50 px-6 py-4 rounded-lg border border-slate-700">
-                    {bestPick.symbol}
+                <div className="flex items-center gap-4">
+                  <div className="flex flex-col">
+                    <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Market</div>
+                    <div className="text-2xl font-bold text-white bg-slate-900/50 px-4 py-3 rounded-lg border border-slate-700 leading-tight">
+                      {SYMBOL_NAMES[displayPick.symbol] ?? displayPick.symbol}
+                    </div>
+                    <div className="text-slate-600 text-xs mt-1">{displayPick.symbol}</div>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <span className={`text-2xl font-bold uppercase tracking-wider ${TRADE_TYPE_COLOR[bestPick.type] ?? "text-white"}`}>
-                      {bestPick.type}{bestPick.targetDigit >= 0 ? ` ${bestPick.targetDigit}` : ""}
+                  <div className="flex flex-col gap-1 pt-4">
+                    <span className={`text-2xl font-bold uppercase tracking-wider ${TRADE_TYPE_COLOR[displayPick.type] ?? "text-white"}`}>
+                      {displayPick.type}{displayPick.targetDigit >= 0 ? ` ${displayPick.targetDigit}` : ""}
                     </span>
-                    <span className="text-slate-500 text-xs">{bestPick.detail}</span>
+                    <span className="text-slate-500 text-xs">{displayPick.detail}</span>
                   </div>
                 </div>
-                <button
-                  data-testid="button-auto-switch"
-                  onClick={() => setActiveSymbol(bestPick.symbol)}
-                  className="px-6 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 border border-amber-500/50 rounded-lg uppercase tracking-wider font-bold transition-all whitespace-nowrap"
-                >
-                  [Auto-Switch to Target Market]
-                </button>
+
+                {/* Dual-state button */}
+                {isScannerLocked ? (
+                  <div className="flex flex-col items-end gap-2">
+                    <button
+                      data-testid="button-unlock"
+                      onClick={handleUnlock}
+                      className="px-5 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg uppercase tracking-wider font-bold transition-all whitespace-nowrap text-sm"
+                    >
+                      [Unlock Next Market Scan]
+                    </button>
+                    {mutationDetected && (
+                      <div className="flex items-center gap-2 text-xs text-rose-400 animate-pulse">
+                        <AlertTriangle className="w-3 h-3" />
+                        MARKET MUTATION DETECTED — CONSIDER REFRESHING
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    data-testid="button-engage"
+                    onClick={handleEngageEdge}
+                    disabled={currentBestPick.score <= 0}
+                    className="px-6 py-3 bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 border border-amber-500/50 rounded-lg uppercase tracking-wider font-bold transition-all whitespace-nowrap disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    [Engage Current Highest Edge]
+                  </button>
+                )}
               </div>
 
-              {/* Target data sub-grid */}
+              {/* Target sub-grid */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-white/5 pt-4">
-                {/* Target Digit badge */}
                 <div className="flex items-center gap-3 bg-slate-900/50 border border-slate-700/60 rounded-lg px-4 py-3">
                   <Target className="w-4 h-4 text-slate-500 flex-shrink-0" />
                   <div className="flex flex-col gap-0.5 min-w-0">
                     <span className="text-slate-500 text-xs uppercase tracking-wider">Target Digit</span>
-                    <span className={`font-bold text-lg leading-tight truncate ${TRADE_TYPE_COLOR[bestPick.type] ?? "text-white"}`}>
-                      {bestPick.targetDigitLabel}
+                    <span className={`font-bold text-lg leading-tight ${TRADE_TYPE_COLOR[displayPick.type] ?? "text-white"}`}>
+                      {displayPick.targetDigitLabel}
                     </span>
                   </div>
                 </div>
-
-                {/* Duration badge */}
                 <div className="flex items-center gap-3 bg-slate-900/50 border border-slate-700/60 rounded-lg px-4 py-3">
                   <Clock className="w-4 h-4 text-slate-500 flex-shrink-0" />
                   <div className="flex flex-col gap-0.5">
-                    <span className="text-slate-500 text-xs uppercase tracking-wider">Duration</span>
+                    <span className="text-slate-500 text-xs uppercase tracking-wider">
+                      Duration {tickVelocityMs !== null ? `(${tickVelocityMs < 500 ? "fast" : tickVelocityMs > 2000 ? "slow" : "normal"} market)` : ""}
+                    </span>
                     <span className="font-bold text-lg text-white leading-tight">
-                      {bestPick.optimalTicks} {bestPick.optimalTicks === 1 ? "Tick" : "Ticks"}
+                      {velocityAdjustedTicks} {velocityAdjustedTicks === 1 ? "Tick" : "Ticks"}
                     </span>
                   </div>
                 </div>
-
-                {/* Trade type badge */}
-                <div className={`flex items-center gap-3 border rounded-lg px-4 py-3 ${TRADE_TYPE_BG[bestPick.type] ?? "bg-slate-900/50 border-slate-700/60"}`}>
+                <div className={`flex items-center gap-3 border rounded-lg px-4 py-3 ${TRADE_TYPE_BG[displayPick.type] ?? "bg-slate-900/50 border-slate-700/60"}`}>
                   <Crosshair className="w-4 h-4 flex-shrink-0 opacity-60" />
                   <div className="flex flex-col gap-0.5">
                     <span className="text-xs uppercase tracking-wider opacity-60">Contract</span>
-                    <span className="font-bold text-lg leading-tight uppercase tracking-wider">
-                      {bestPick.type}
-                    </span>
+                    <span className="font-bold text-lg leading-tight uppercase tracking-wider">{displayPick.type}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Entry trigger row */}
+              {/* Entry trigger */}
               <div className="flex items-center gap-3 bg-slate-900/40 border border-slate-700/40 rounded-lg px-4 py-3">
-                {/* Tick-sync pulse dot */}
                 <div className="relative flex-shrink-0 w-3 h-3">
-                  <span className={`absolute inset-0 rounded-full transition-colors duration-75 ${tickPulse ? "bg-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.6)]" : "bg-emerald-700"}`} />
+                  <span className={`absolute inset-0 rounded-full transition-colors duration-75 ${tickPulse ? "bg-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.6)]" : "bg-emerald-800"}`} />
                 </div>
                 <div className="flex flex-col gap-0.5 min-w-0">
                   <span className="text-slate-500 text-xs uppercase tracking-wider">Entry Point Trigger</span>
-                  <span className="text-amber-200/80 text-sm font-medium leading-snug">
-                    {bestPick.entryTrigger}
-                  </span>
+                  <span className="text-amber-200/80 text-sm font-medium leading-snug">{displayPick.entryTrigger}</span>
                 </div>
+              </div>
+
+              {/* Execution string */}
+              <div className="flex items-center gap-3 bg-slate-900/60 border border-slate-700/50 rounded-lg px-4 py-3">
+                <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                  <span className="text-slate-500 text-xs uppercase tracking-wider">[Execution String]</span>
+                  <span className="text-emerald-300/90 text-sm font-bold tracking-wide truncate">{execString}</span>
+                </div>
+                <button
+                  onClick={handleCopy}
+                  data-testid="button-copy-exec"
+                  title="Copy to clipboard"
+                  className="flex-shrink-0 p-2 rounded-md border border-slate-700 bg-slate-800/50 hover:border-slate-500 transition-colors"
+                >
+                  {copied
+                    ? <Check className="w-4 h-4 text-emerald-400" />
+                    : <Copy className="w-4 h-4 text-slate-400" />}
+                </button>
               </div>
             </div>
           ) : (
@@ -223,7 +414,7 @@ export default function Dashboard() {
               />
             )}
             <span className={`text-8xl font-bold z-10 ${latestDigit !== null && latestDigit % 2 === 0 ? "text-blue-400" : "text-amber-400"}`}>
-              {latestDigit !== null ? latestDigit : "-"}
+              {latestDigit !== null ? latestDigit : "—"}
             </span>
           </div>
 
@@ -276,13 +467,16 @@ export default function Dashboard() {
               const minFreq = Math.min(...frequencies);
               const isHot = freq === maxFreq && freq > 0;
               const isCold = freq === minFreq && activeDigits.length >= windowSize;
+              const isMutating = poissonFlags[i];
               const textColor = isHot ? "text-emerald-500" : isCold ? "text-red-500" : "text-slate-400";
               const ringColor = isHot ? "stroke-emerald-500" : isCold ? "stroke-red-500" : "stroke-slate-500";
               const dashArray = 2 * Math.PI * 30;
               const dashOffset = dashArray - (dashArray * freq) / 100;
+              const historyDots = computeHistoryDots(activeDigits, i);
 
               return (
                 <div key={i} className="flex flex-col items-center gap-2">
+                  {/* Ring meter */}
                   <div className="relative w-20 h-20">
                     <svg className="w-full h-full transform -rotate-90">
                       <circle cx="40" cy="40" r="30" className="stroke-slate-800 fill-none" strokeWidth="6" />
@@ -297,8 +491,24 @@ export default function Dashboard() {
                     <div className="absolute inset-0 flex items-center justify-center">
                       <span className={`text-2xl font-bold ${textColor}`}>{i}</span>
                     </div>
+                    {/* Poisson mutation dot */}
+                    {isMutating && (
+                      <div className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(251,191,36,0.8)]" title="Mutation imminent — cooling off period approaching" />
+                    )}
                   </div>
+
                   <span className="text-xs text-slate-400">{freq.toFixed(1)}%</span>
+
+                  {/* Persistent visual history tape — 5 mini dots */}
+                  <div className="flex gap-1 items-center">
+                    {historyDots.map((age, di) => (
+                      <div
+                        key={di}
+                        className={`w-2 h-2 rounded-full transition-all duration-300 ${DOT_AGE_CLASS(age)}`}
+                        title={age < 999 ? `${age} ticks ago` : "not recent"}
+                      />
+                    ))}
+                  </div>
                 </div>
               );
             })}
@@ -309,23 +519,23 @@ export default function Dashboard() {
       {/* Multi-Index Scanner Grid */}
       <div className="rounded-xl bg-slate-500/10 backdrop-blur-xl border border-white/10 shadow-[inset_0_1px_1px_rgba(255,255,255,0.15)] p-6">
         <h3 className="text-slate-400 uppercase tracking-widest text-sm mb-6">Multi-Index Scanner</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {ALL_SYMBOLS.map(sym => {
             const symDigits = scannerData[sym] || [];
-            const latest = symDigits.length > 0 ? symDigits[symDigits.length - 1] : "-";
+            const latest = symDigits.length > 0 ? symDigits[symDigits.length - 1] : "—";
             const streak = computeStreak(symDigits);
             const absence = computeAbsence(symDigits);
             const isSevereStreak = streak.count >= 6;
             const isSevereAbsence = absence.count >= 20;
             const isActive = sym === activeSymbol;
-            const isBestPick = sym === bestPick.symbol && bestPick.score > 0;
+            const isBestPick = sym === displayPick.symbol && displayPick.score > 0;
 
             return (
               <div
                 key={sym}
                 onClick={() => setActiveSymbol(sym)}
                 data-testid={`scanner-cell-${sym}`}
-                className={`cursor-pointer border p-3 rounded-lg flex flex-col gap-2 transition-colors ${
+                className={`cursor-pointer border p-3 rounded-lg flex flex-col gap-1.5 transition-colors ${
                   isActive
                     ? "bg-amber-500/10 border-amber-500/50"
                     : isBestPick
@@ -336,17 +546,17 @@ export default function Dashboard() {
                 }`}
               >
                 <div className="flex justify-between items-center">
-                  <span className={`font-bold text-sm ${isActive ? "text-amber-500" : isBestPick ? "text-purple-400" : "text-slate-300"}`}>
-                    {sym}
+                  <span className={`font-bold text-xs ${isActive ? "text-amber-500" : isBestPick ? "text-purple-400" : "text-slate-300"}`}>
+                    {SYMBOL_NAMES[sym] ? SYMBOL_NAMES[sym].replace(" Index", "").replace("Volatility ", "Vol ").replace(" (1s)", " 1s") : sym}
                   </span>
                   <span className="text-lg font-bold text-white">{latest}</span>
                 </div>
                 <div className="flex justify-between text-xs">
-                  <span className={`${isSevereStreak ? (streak.direction === "EVEN" ? "text-blue-400" : "text-amber-400") : "text-slate-500"}`}>
-                    {streak.direction !== "NONE" ? `${streak.direction[0]}:${streak.count}` : "-"}
+                  <span className={`${isSevereStreak ? (streak.direction === "EVEN" ? "text-blue-400" : "text-amber-400") : "text-slate-600"}`}>
+                    {streak.direction !== "NONE" ? `${streak.direction[0]}:${streak.count}` : "—"}
                   </span>
-                  <span className={`${isSevereAbsence ? "text-purple-400" : "text-slate-500"}`}>
-                    {absence.digit >= 0 ? `D${absence.digit}:${absence.count}` : "-"}
+                  <span className={`${isSevereAbsence ? "text-purple-400" : "text-slate-600"}`}>
+                    {absence.digit >= 0 ? `D${absence.digit}:${absence.count}` : "—"}
                   </span>
                 </div>
               </div>
@@ -354,6 +564,17 @@ export default function Dashboard() {
           })}
         </div>
       </div>
+
+      {/* Floating Mini Tracker */}
+      {showMiniTracker && (
+        <FloatingMiniTracker
+          displayPick={displayPick}
+          latestDigit={latestDigit}
+          velocityAdjustedTicks={velocityAdjustedTicks}
+          tickPulse={tickPulse}
+          onClose={() => setShowMiniTracker(false)}
+        />
+      )}
     </div>
   );
 }

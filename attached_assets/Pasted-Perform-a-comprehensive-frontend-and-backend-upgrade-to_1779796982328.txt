@@ -1,0 +1,75 @@
+Perform a comprehensive frontend and backend upgrade to the Standalone Deriv Market Analysis Scanner application. This updates the asset display matrix to use official Deriv platform market names while incorporating an advanced Scan Lock mechanism, ergonomic UI overlays, psychological audio triggers, and advanced mathematical shadow layers. The system remains a 100% public-data analytics tool with zero account key or login dependencies.
+
+========================================================================
+MODULE 01: TRADING FLOOR ASSET MAPPING (AUTHENTIC DERIV NAMES)
+========================================================================
+- Create a global mapping object to translate backend WebSocket stream symbols to official Deriv display strings across all dropdown selectors, tickers, and scanners:
+  * R_10 -> "Volatility 10 Index"
+  * R_25 -> "Volatility 25 Index"
+  * R_50 -> "Volatility 50 Index"
+  * R_75 -> "Volatility 75 Index"
+  * R_100 -> "Volatility 100 Index"
+  * 1HZ10V -> "Volatility 10 (1s) Index"
+  * 1HZ25V -> "Volatility 25 (1s) Index"
+  * 1HZ50V -> "Volatility 50 (1s) Index"
+  * 1HZ75V -> "Volatility 75 (1s) Index"
+  * 1HZ100V -> "Volatility 100 (1s) Index"
+  * BOOM300N -> "Boom 300 Index"
+  * BOOM500 -> "Boom 500 Index"
+  * BOOM1000 -> "Boom 1000 Index"
+  * CRASH300N -> "Crash 300 Index"
+  * CRASH500 -> "Crash 500 Index"
+  * CRASH1000 -> "Crash 1000 Index"
+  * stpRNG -> "Step Index"
+  * RBREUR -> "Range Break 100 Index"
+  * RBREU200 -> "Range Break 200 Index"
+- Ensure that the frontend dropdown menu, chart labels, and top win-edge pick cards render the polished Deriv names while maintaining the raw strings strictly for backend WebSocket messages.
+
+========================================================================
+MODULE 02: SCANNER LOCK & MANUAL RELEASE ENGINE
+========================================================================
+- Create a global boolean React state: `isScannerLocked` (defaulting to false).
+- When `isScannerLocked` is true, freeze all variable readouts inside the top '[AI BEST ENTRY PICK]' card. The background threads must continue parsing all 19 volatile markets silently, but the user interface display must remain solidly anchored to the locked data frame.
+- Re-engineer the amber '[AUTO-SWITCH TO TARGET MARKET]' button into a dual-state action toggle:
+  * STATE A (Unlocked): Displays "[ENGAGE CURRENT HIGHEST EDGE]". Clicking it shifts the primary chart asset dropdown view and instantly flips `isScannerLocked` to true.
+  * STATE B (Locked): Changes the button styling to a sleek semi-transparent red theme (border-rose-500/30 bg-rose-500/10) displaying "[UNLOCK NEXT MARKET SCAN]". Clicking it sets `isScannerLocked` to false, allowing the top panel to instantly snap to the newest high-probability edge.
+- Add a secure status lock icon next to the card title text:
+  * Locked: Show a lock icon reading "LOCKED ON CURRENT VOLATILITY" in a crisp, muted font.
+  * Unlocked: Show a scanning radar icon reading "SCANNING ALL VOLATILE INDEXES...".
+
+========================================================================
+MODULE 03: ERGONOMIC UI & FLOATING OVERLAY TERMINAL
+========================================================================
+- Implement a Picture-in-Picture / Floating Widget utility button on the dashboard labeled "[POP-OUT MINI TRACKER]".
+- Clicking this opens a small, highly compact, borderless HTML overlay panel containing only the absolute essentials: the frozen '[AI BEST ENTRY PICK]' asset name, target digit, tick duration, and the giant pulsing live digit. 
+- Ensure this floating overlay uses CSS fixed positioning with draggable handles, allowing the operator to position it directly next to their official open trading execution window on screen.
+- For the Matches/Differs Ring Engine, implement a 'Persistent Visual History Tape' directly beneath each of the 10 digit circular meters: render a horizontal strip of 5 mini-indicator dots tracking how recently that exact digit appeared in the live tick stream (lighting up neon on a fresh hit, fading to dark grey over time to track instant clustering trends).
+
+========================================================================
+MODULE 04: PSYCHOLOGICAL SENSORY & AUDIO LAYER
+========================================================================
+- Integrate the native browser HTML5 Web Audio API (zero external audio files or dependencies) to deliver real-time, non-intrusive sound frequencies that accelerate operator reaction times:
+  * EVEN TICK DELIVERED: Emit a short, clean, crisp high-pitched click frequency (880Hz, 0.02 seconds duration).
+  * ODD TICK DELIVERED: Emit a short, clean, deep low-pitched thump frequency (220Hz, 0.03 seconds duration).
+  * STREAK MILESTONE ALERT: When any asset hits an intense streak of 5 or 6 consecutive digits of identical parity, chime a unique melodic alert notification (660Hz, 0.15 seconds duration).
+- Include an "Audio Mute Toggle" icon switch inside the main top bar header to allow the user to easily silence or engage the audio layers instantly.
+- Inject a haptic pulse routine utilizing `navigator.vibrate(25)` to give a physical micro-pulse feedback vibration exactly on the contract trigger moment when accessed on mobile or supported trackpad hardware.
+
+========================================================================
+MODULE 05: ADVANCED DATA SCIENCE & VOLATILITY SHADOW METRICS
+========================================================================
+- Implement a 'Tick Speed Velocity Gauge' inside the state engine: calculate the exact microsecond delta between the last 5 incoming ticks on the active asset. If ticks deliver faster than the rolling average, dynamically decrease the recommended `optimal_ticks` duration; if they slow down, widen the safety margin.
+- Implement the 'Poisson Distribution Shadow Layer' for the Matches/Differs algorithm: mathematically cross-reference the 20-tick short window against the 100-tick baseline distribution. If a digit spikes to an extreme frequency (> 22%) inside the short window, trigger a 'Last-Second Mutation Indicator' warning dot next to that digit's ring meter, alerting the operator that a severe mathematical cooling-off period is imminent (perfect for timing safe Differs entries).
+- Add a 'Microsecond Drawdown Protection Alert': If the scanner is locked on an asset, but the background monitoring thread catches that the target digit has just flashed twice within 3 ticks on a separate index, flash a warning border around the unlock button reading "MARKET MUTATION DETECTED — CONSIDER REFRESHING".
+
+========================================================================
+MODULE 06: ACTION COMPILER TEMPLATE STRING GENERATOR
+========================================================================
+- Add a dedicated, clean text chip box at the footer of the AI selection card titled "[EXECUTION STRING]".
+- Automatically compile the active strategy configuration into a standardized, hyper-compact template text string (e.g., "Volatility 25 (1s) Index-DIFF-D0-T1").
+- Add a quick 1-click clipboard icon button next to it that triggers `navigator.clipboard.writeText`, copying the configuration string instantly so the operator can pass it cleanly into any adjacent macro tool or note sheet with a single keystroke.
+
+========================================================================
+VISUAL THEME INTEGRATION
+========================================================================
+Maintain the signature colorless glassmorphism style across all newly spawned widgets, tools, and elements (`bg-slate-500/10 backdrop-blur-xl border border-white/10`). All text updates and alerts must feature pure English string outputs with clean amber-400 and emerald-400 alert indicators. Ensure zero performance lagging across the background tick channels.
