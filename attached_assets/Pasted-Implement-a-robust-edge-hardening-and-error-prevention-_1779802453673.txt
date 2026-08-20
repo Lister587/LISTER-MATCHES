@@ -1,0 +1,31 @@
+Implement a robust edge-hardening and error-prevention update to eliminate data drift, race conditions, and memory leaks across the 10 volatility indices.
+
+========================================================================
+MODULE 01: ASYNC CONCURRENCY & MEMORY LEAK GUARD
+========================================================================
+- Implement an explicit cleanup routine inside the React useEffect hook controlling the active asset subscription. Before shifting to a new index, the engine must send an explicit `{"forget_all": "ticks"}` command, completely drain the active `tickBuffer`, and reset the `rawPrices` array. This prevents "data bleed" (where digits from a previous volatility index briefly leak into the new asset's analytics).
+- Limit the rolling frontend tick arrays strictly to a maximum capacity of 200 items using a fast `shift()` routine. This prevents browser memory accumulation, ensuring the application can run continuously for days inside a cyber café station without slowing down or crashing.
+
+========================================================================
+MODULE 02: SYSTEM LATENCY DRIFT PROTECTION
+========================================================================
+- Inject a strict microsecond timestamp comparison check on every single incoming WebSocket data packet payload: `const drift = Date.now() - (data.tick.epoch * 1000)`.
+- If the calculated network or browser processing drift exceeds 350 milliseconds, immediately flag the tick as "Stale Data," bypass its inclusion in the active AI scanner calculations, and flash a subtle, brief amber border around the big live digit cell to notify the operator of a network lag spike. 
+
+========================================================================
+MODULE 03: FAULT-TOLERANT RECONNECTION WATCHDOG
+========================================================================
+- Implement an automated background watchdog timer that checks the heartbeat of the WebSocket connection every 1,000 milliseconds.
+- If no new tick data packet is received across any channel for more than 5,000 milliseconds, trigger an immediate, graceful reconnection cycle: automatically close the hung socket, wait a silent 500ms safety window, re-open the backend FastAPI proxy connection, and re-subscribe to the active asset streaming channels.
+
+========================================================================
+MODULE 04: FLOATING-POINT ROUNDING & TERMINAL DIGIT ISOLATION FIX
+========================================================================
+- Harden the terminal digit extraction utility to cleanly handle asset prices regardless of varying decimal precisions (e.g., assets with 2, 3, or 5 decimal places). 
+- Use an absolute string-trimming routine that safely strips out commas and decimal points before targeting the final character: `const digit = parseInt(String(tick.quote).trim().replace(/[.,]/g, '').slice(-1))`. This prevents NaN (Not a Number) execution errors when encountering shifting broker quote formats.
+
+========================================================================
+MODULE 05: RACE-CONDITION UI LOCKS
+========================================================================
+- Intelligently disable any rapid, accidental double-clicks on the "[UNLOCK NEXT MARKET SCAN]" or "[ENGAGE CURRENT HIGHEST EDGE]" buttons by introducing a strict 300ms execution debounce state window. 
+- Ensure all statistical calculations (Poisson distributions and tick velocity metrics) evaluate smoothly using fallback zero states (`|| 0`) if the initial tick data history is still populating during the first 5 seconds of application launch.
